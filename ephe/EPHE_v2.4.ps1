@@ -128,15 +128,14 @@ while ($i -lt $comps.count)
         {
             try
             {
-            $outpath = "<Your desired Path>EPHE\EPHE Output"
-            $rawpath30 = "<Your desired Path>EPHE\EPHE rawdata"
+            $rawpath = "<Your desired Path>EPHE\EPHE rawdata"
             $errorpath = "<Your desired Path>EPHE\EPHE Errors"
             $time = get-date -format yyyyMMddHHmmss
             $os = Get-Wmiobject -ComputerName $comp -Class Win32_OperatingSystem -ErrorAction SilentlyContinue
             $model = Get-WmiObject -ComputerName $comp -Class Win32_Computersystem -ErrorAction SilentlyContinue
             $proc = Get-WmiObject -ComputerName $comp -Class win32_processor -ErrorAction SilentlyContinue
             $proc = $proc.name
-            $mem = Get-WmiObject -ComputerName $comp -Class Win32_Physicalmemory -ErrorAction SilentlyContinue | select Capacity
+            $mem = Get-WmiObject -ComputerName $comp -Class Win32_Physicalmemory -ErrorAction SilentlyContinue | Select-Object Capacity
             $memp = $mem.partnumber
             $memc = $mem.Capacity
             $memc1 = $memc[0]
@@ -233,8 +232,8 @@ catch
 ## This Section Combines Job output into a Single CSV ##
 ########################################################
 
-$acsv = dir $rawpath -filter *.csv | Where-Object {$_.basename -like "Compinfo*"}
-import-csv -LiteralPath $acsv.fullname | sort ComputerName | export-csv -Path "$outpath\Compinfo.csv"
+$acsv = Get-ChildItem $rawpath -filter *.csv | Where-Object {$_.basename -like "Compinfo*"}
+import-csv -LiteralPath $acsv.fullname | Sort-Object ComputerName | export-csv -Path "$outpath\Compinfo.csv"
 
 ########################################
 ## This Completes Excess File Cleanup ##
