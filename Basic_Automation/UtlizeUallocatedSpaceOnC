@@ -1,0 +1,129 @@
+mkdir "C:\Temp\UUSC\UUSC Output\names" -ErrorAction SilentlyContinue
+mkdir "C:\Temp\UUSC\UUSC Output" -ErrorAction SilentlyContinue
+mkdir "C:\Temp\UUSC\UUSC Archive" -ErrorAction SilentlyContinue
+mkdir "C:\Temp\UUSC\UUSC rawdata" -ErrorAction SilentlyContinue
+
+$namepath = "C:\Temp\UUSC\UUSC Output\names"
+$outpath = "C:\Temp\UUSC\UUSC Output"
+$archivepath = "C:\Temp\UUSC\UUSC Archive"
+$rawpath = "C:\Temp\UUSC\UUSC rawdata"
+$time = Get-Date -Format yyyyMMddHHmmss
+
+If(get-item -Path "$outpath\Compinfo.csv" -ErrorAction SilentlyContinue)
+    {
+    Get-item -Path "$outpath\Compinfo.csv" | Move-Item -Destination "$archivepath\Compinfo$time.csv"
+    }
+
+
+Remove-item -Path "$rawpath\*" -Force -ErrorAction SilentlyContinue
+#####################################
+## This Section Configures logging ##
+#####################################
+
+if (([System.Diagnostics.EventLog]::SourceExists("UUSC") -ne "True"))
+    {
+    New-EventLog -Source "UUSC" -LogName "UUSCF"
+    Write-Verbose "Configuring Logging..." -Verbose
+    }
+
+#####################################################################################
+## This Section Gathers All Computer Names in Active Directory Into reference File ##
+#####################################################################################
+
+Workflow Get-CompNames
+{
+    $comps = Get-ADComputer -Filter {Name -notlike "*Local*"} -Property "name"
+    $comps = $comps.name
+    $namepath = "C:\Temp\UUSC\UUSC Output\names"
+    $compcp = @()
+    $fcompcp = @()
+
+    foreach -parallel ($comp in $comps)
+    {
+        If(test-connection -computername $comp -Count 2 -ErrorAction SilentlyContinue)
+        {
+            $WORKFLOW:compcp +=($comp)
+        }
+
+        Else
+        {
+            $fhst = $comp
+            $WORKFLOW:fcompcp +=($fhst)
+        }
+    }
+    out-file -InputObject $fcompcp -filepath "$namepath\FWKSname.csv" -Force -NoClobber
+    out-file -InputObject $compcp -filePath "$namepath\WKSname.csv" -Force -NoClobber
+}
+Get-CompNames
+
+########################################################################################
+## Using Computername Reference File, This Section Gathers All Required Hardware Data ##
+########################################################################################
+
+$comps = Get-content -Path "$namepath\WKSname.csv"
+$compsperbatch = 41
+$i= 1
+$j = $compsperbatch
+$batch = 1
+while ($i -lt $comps.count)
+{
+  $compbatch = $comps[$i..$j]
+  $jobname = "Batch$batch"
+  Start-job -Name $jobname -ScriptBlock{
+      param ([string[]]$comps)
+      foreach ($comp in $comps)
+      {
+        Try{
+        $ComputerSystemInfo = Get-WmiObject -Class Win32_ComputerSystem -ComputerName $comp
+
+        If($ComputerSystemInfo -eq "*VMware*")
+        {
+          $Free = (Get-PSDrive C) #Set drive information to variable
+          $Free = ($Free.free/1GB) #Get free space and divide by 1 gigabyte
+          $Free = ([math]::Round($Free,2)) #Round free space to two decimal places
+        }
+
+        if ($Free -lt 10)
+         {
+           $Drive2Expand ='C' #Change to the NTFS drive letter you want to expand
+           $VirtDiskNum = (Get-Disk |Where-Object IsBoot -eq Yes) #Get disk number of default hyper-v boot drive but change if expanding a secondary or non-boot drive
+           $PartitionNum = (Get-Partition -DriveLetter $Drive2Expand) #Get the partition number for drive c
+           $PartSize = (Get-PartitionSupportedSize -DiskNumber $VirtDiskNum.number -PartitionNumber $PartitionNum.PartitionNumber) #Get partition info for drive c
+           Resize-Partition -PartitionNumber $PartitionNum.PartitionNumber -Size $PartSize.SizeMax -DiskNumber $VirtDiskNum.number #Expand drive C using all unallocated space available]
+         }
+
+        }
+        Catch {
+        Write-Verbose "That's an error! Check UUSCF in event viewer..." -Verbose
+        Write-EventLog -Source "UUSC" -LogName "UUSCF" -EventId 1002 -EntryType Information -Message "Error: $($_.Exception.Message)" -Category 1 -RawData 10,20
+        }
+      }
+    } -ArgumentList (,$compbatch)
+    $Batch +=1
+    $i = $j + 1
+    $j += $compsperbatch
+    if ($i -gt $comps.count) {$i = $comps.count}
+    if ($j -gt $comps.count) {$j = $comps.count}
+}
+    Try
+    {
+        do
+        {
+        $jobs = Get-Job
+        $jobs = $jobs.Name
+        foreach($job in $jobs)
+        {
+            If ((get-job -name "$job" -ErrorAction Continue).state -ne "running")
+                {
+                Get-Job -Name "$job" -ErrorAction Continue|
+                Receive-Job -Keep -ErrorAction Continue
+                Remove-Job -Name "$job" -Force
+                }
+            }
+        }
+        Until(($jobs) -eq $null)
+    }
+    Catch {
+    Write-Verbose "That's an error! Check UUSCF in event viewer..." -Verbose
+    Write-EventLog -Source "UUSC" -LogName "UUSCF" -EventId 1002 -EntryType Information -Message "Error: $($_.Exception.Message)" -Category 1 -RawData 10,20
+    }
