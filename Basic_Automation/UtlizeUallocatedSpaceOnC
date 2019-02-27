@@ -1,7 +1,4 @@
 mkdir "C:\Temp\UUSC\UUSC Output\names" -ErrorAction SilentlyContinue
-mkdir "C:\Temp\UUSC\UUSC Output" -ErrorAction SilentlyContinue
-mkdir "C:\Temp\UUSC\UUSC Archive" -ErrorAction SilentlyContinue
-mkdir "C:\Temp\UUSC\UUSC rawdata" -ErrorAction SilentlyContinue
 
 $namepath = "C:\Temp\UUSC\UUSC Output\names"
 
